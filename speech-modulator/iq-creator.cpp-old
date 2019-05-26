@@ -1,0 +1,159 @@
+#include	"iq-creator.h"
+#include	<math.h>
+
+	iq_creator::iq_creator (uint16_t size, int dir) {
+	this	-> size	=  size;
+	this	-> dir	= dir;
+	inBuffer.    resize (size);
+	outBuffer.   resize (size);
+	Window.      resize (size);
+	delayBuffer. resize (size);
+	cosTable.    resize (size / 2);
+	sinTable.    resize (size / 2);
+	for (int i = 0; i < size / 2; i ++) {
+	   cosTable [i] = cos (-2 * M_PI * i / size);
+	   sinTable [i] = sin (-2 * M_PI * i / size);
+	}
+//
+//      Blackman window, firsize = ???
+	for (int i = 0; i < size; i ++)
+           Window [i]  = (0.42 -
+                    0.5 * cos (2 * M_PI * (float)i / size) +
+                    0.08 * cos (4 * M_PI * (float)i / size));
+
+	fillP	=  size / 4;
+}
+
+	iq_creator::~iq_creator	(void) {
+}
+//
+//	to promote some continuity, we apply some overlap and
+//	windowing
+std::complex<float> iq_creator::Pass (float v, float *old) {
+std::complex<float> res = outBuffer [fillP - size / 4];
+
+	*old			= delayBuffer [fillP - size / 4];
+	inBuffer    [fillP]	= v;
+	delayBuffer [fillP]	= v;
+	fillP ++;
+	if (fillP >= size) {
+	   for (int i = 0; i < size; i ++)
+	      inBuffer [i] *= Window [i];
+	   hilbert (inBuffer. data (), outBuffer. data (), size);
+	   for (int i = 0 ; i < size / 4; i ++)
+	      inBuffer [i] = delayBuffer [size - size / 4 - 1 + i];
+	   fillP = size / 4;
+	}
+	return res;
+}
+
+void	iq_creator::fft (std::complex<float> *v, int n){
+int i, j, k, n1, n2, a;
+double c, s, e, t1, t2;        
+float	x [n];
+float	y [n];
+int	m	= log2 (n);
+	
+	for (i = 0; i < n; i ++) {
+	   x [i] = real (v [i]);
+	   y [i] = imag (v [i]);
+	}
+
+	j = 0; /* bit-reverse */
+	n2 = n/2;
+	for (i = 1; i < n - 1; i++) {
+	   n1 = n2;
+	   while (j >= n1) {
+	      j = j - n1;
+	      n1 = n1/2;
+	   }
+	   j = j + n1;
+               
+	   if (i < j) {
+	      t1	= x [i];
+	      x [i]	= x [j];
+	      x [j]	= t1;
+	      t1	= y [i];
+	      y [i]	= y[j];
+	      y [j]	= t1;
+	   }
+	}
+
+/* FFT */                                                                                 
+	n1 = 0; 
+	n2 = 1;
+                                             
+	for (i = 0; i < m; i++) {
+	   n1 = n2;
+	   n2 = n2 + n2;
+	   a = 0;
+
+	   for (j = 0; j < n1; j++) {
+	      c = cosTable [a];
+	      s = sinTable [a];
+	      a += 1 << (m - i - 1);
+
+	      for (k = j; k < n; k = k + n2) {
+	         t1 = c * x [k + n1] - s * y [k + n1];
+	         t2 = s * x [k + n1] + c * y [k + n1];
+	         x [k + n1] = x [k] - t1;
+	         y [k + n1] = y [k] - t2;
+	         x [k] = x [k] + t1;
+	         y [k] = y [k] + t2;
+	      }
+	   }
+	}
+
+	for (i = 0; i < n; i ++)
+	   v [i] = std::complex<float> (x [i], y [i]);
+}                 
+
+
+void	iq_creator::ifft (std::complex<float>* data, int size) {
+	for (int i = 0; i < size; i ++)
+	   data [i] = conj (data [i]);
+	fft (data, size);
+	for (int i = 0; i < size; i ++)
+	   data [i] = conj (data [i]);
+
+	for (int i = 0; i < size; i++) {
+	   data [i] /= size;
+	}
+}
+//
+//	"hilbert" maps an array of "real" samples onto
+//	and array of "analytical" samples
+void iq_creator::hilbert (float* data, std::complex<float>* dest, int size) {
+std::complex<float> temp [size];
+
+	for (int i = 0; i < size; i++) 
+	   temp [i] =  std::complex<float> (data [i], 0);
+		
+	fft (temp, size);
+
+	if (dir == 0) {		// going for positive frequencies
+	   temp [0]	= std::complex<float> (0, 0);
+	   for (int i = i; i < size / 2; i ++)
+	      temp [i] = std::complex<float> (real (temp [i]) * 2,
+	                                      imag (temp [i]) * 2);
+	   for (int i = size / 2; i < size; i++) {
+	      temp [i] = std::complex<float> (0, 0);
+	   }
+	}
+	else {		// going for negative frequencies
+	   temp [size / 2]	= std::complex<float> (0, 0);
+	   for (int i = size / 2; i < size; i ++)
+	      temp [i] = std::complex<float> (real (temp [i]) * 2,
+	                                      imag (temp [i]) * 2);
+	   for (int i = 0; i < size / 2; i++) {
+	      temp [i] = std::complex<float> (0, 0);
+	   }
+	}
+	ifft (temp, size);
+
+	for (int i = 0; i < size; i++) {
+	   dest [i] = temp [i];
+//	   dest [i] = std::complex<float> (-2 * imag (temp[i]), data [i]);
+	}
+}
+

@@ -1,0 +1,34 @@
+
+#ifndef	__IQ_CREATOR__
+#define	__IQ_CREATOR__
+#include	<stdlib.h>
+#include	<stdint.h>
+#include	<math.h>
+#include	<vector>
+#include	<complex>
+
+class	iq_creator {
+public:
+			iq_creator	(uint16_t size, int dir = 0);
+			~iq_creator	(void);
+std::complex<float>	Pass		(float v, float *);
+private:
+
+	int		size;
+	int		dir;
+	std::vector<float> cosTable;
+	std::vector<float> sinTable;
+	std::vector<float> inBuffer;
+	std::vector<std::complex<float>> outBuffer;
+	std::vector<float> delayBuffer;
+	std::vector<float> Window;
+	int		fillP;
+	void		fft (std::complex<float>* data, int size);
+	void		ifft (std::complex<float>* data, int size);
+	void		hilbert (float* data, std::complex<float>* dest, int size);
+//	void		hilbert (float* data, float* dest, int size);
+};
+
+#endif
+
+

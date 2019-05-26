@@ -1,0 +1,16 @@
+
+
+Speech modulator uses portaudio to connect to a sound card. For now,
+we use the "default" input device, which happens to be the built-in
+microphone.
+
+The sound is read-in with a samplerate of 44100, the samples
+are passed through a lowpass filter, a rate converter and 
+an hilbert filter to create IQ samples.
+
+These samples are passed on to a tcp client who does the
+communication to the server - either the iq-server (rpi) or the
+"hackrf-transmitter" (the hackrf)
+
+The software is far from complete and under development
+
