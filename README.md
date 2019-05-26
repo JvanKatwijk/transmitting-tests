@@ -61,10 +61,10 @@ From a practical point of view, the use of the rpi-server is limited,
 it is not able to handle higher incoming samplerates.
 
 -------------------------------------------------------------------------
-* iq-server for the hackrf
+* iq-servers for the hackrf
 -------------------------------------------------------------------------
 
-The iq-server for the hackrf shows a widget. The samplerate and
+The hackrf-transmitter for the hackrf shows a widget. The samplerate and
 ip port for the incoming IQ samples are to be specified in the
 command line. The frequency can be selected on the widget, the widget
 will show the spectrum of the incoming I/Q signals.
@@ -72,6 +72,11 @@ will show the spectrum of the incoming I/Q signals.
 Note that in the current state, the cpu of the rpi will overload
 when running the hackrftransmitter and modulator. Some profiling
 is required.
+
+The hackrf-server is the version without a gui. Parameters are
+the frequency to be used, the sample rate for the incoming data
+and the gain. Of course the port to which we are listening can also
+be specified.
 
 -------------------------------------------------------------------------
 *Modulators
