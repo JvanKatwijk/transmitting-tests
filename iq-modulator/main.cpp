@@ -8,9 +8,11 @@
 #include	<math.h>
 #include	<atomic>
 #include	<complex>
+#include	<vector>
 #include	"tcp-client.h"
 
 #include	<sndfile.h>
+#include	<samplerate.h>
 
 std::atomic<bool> running;
 static
@@ -20,8 +22,7 @@ void    terminate (int num) {
         fprintf (stderr,"Caught signal - Terminating %x\n",num);
 }
 
-#define	BUF_SIZE	4800
-float	buffer	[2 * BUF_SIZE];
+#define	BUF_SIZE	2048
 int16_t	outBuffer [2 * BUF_SIZE];
 
 static inline
@@ -37,8 +38,25 @@ int	phase	= 0;
 tcpClient theGenerator (8765, "127.0.0.1");
 SNDFILE	*infile;
 SF_INFO	sf_info;
-
+int32_t		sampleCounter	= 0;
 uint64_t	nextStop;
+int		inputRate;
+int		outputRate	= 192000;
+int		outputLimit	= BUF_SIZE;
+int		inputSize;
+float		ratio;
+std::vector<float>      bi (0);
+std::vector<float>      bo (0);
+int	error;
+SRC_STATE       *converter =
+                        src_new (SRC_SINC_MEDIUM_QUALITY, 2, &error);
+SRC_DATA        *src_data =
+                        new SRC_DATA;
+
+        if (converter == NULL) {
+           fprintf (stderr, "error creating a converter %d\n", error);
+	   exit (1);
+        }
 
 	if (argc < 2) {
 	   fprintf (stderr, "please specify an input file");
@@ -50,12 +68,17 @@ uint64_t	nextStop;
 	   fprintf (stderr, "could not open %s\n", argv [1]);
 	   exit (1);
 	}
-
-	if (sf_info. samplerate != 96000) {
-	   fprintf (stderr, "Inputrate is %d, should be 96000\n",
+	
+	inputRate	= sf_info. samplerate;
+	if ((sf_info. samplerate != 96000) && (sf_info. samplerate == 192000)) {
+	   fprintf (stderr, "Inputrate is %d, should be 96000 or 192000\n",
 	                                      sf_info. samplerate);
 	   exit (1);
 	}
+	ratio	= (double)outputRate / inputRate;
+	inputSize	= ceil (outputLimit / ratio);
+	bi. resize (inputSize);
+	bo. resize (outputLimit);
 
 	for (int i = 0; i < 64; i++) {
            struct sigaction sa;
@@ -69,11 +92,7 @@ uint64_t	nextStop;
 
 	nextStop	= getMyTime ();
 	while (running. load ()) {
-	   uint64_t currTime = getMyTime ();
-	   if (currTime < nextStop) 
-	      usleep (nextStop - currTime);
-	   nextStop += 50000;
-	   int readCount	= sf_readf_float (infile, buffer, BUF_SIZE);
+	   int readCount	= sf_readf_float (infile, bi. data (), BUF_SIZE);
 	   if (readCount <= 0) {
 	      sf_seek (infile, 0, SEEK_SET);
 	      fprintf (stderr, "eof reached\n");
@@ -81,12 +100,23 @@ uint64_t	nextStop;
 	      continue;
 	   }
 	
-	   for (int i = 0; i < readCount; i ++) {
-	      outBuffer [2 * i] = (int16_t)(buffer [2 * i] * 16384);
-	      outBuffer [2 * i + 1] = (int16_t)(buffer [2 * i + 1] * 16384);
+	   src_data     -> input_frames         = readCount;
+	   src_data     -> output_frames        = outputLimit / 2;
+           int res      = src_process (converter, src_data);
+	   for (int i = 0; i < src_data -> output_frames_gen; i ++) {
+	      outBuffer [2 * i] = (int16_t)(bo [2 * i] * 16384);
+	      outBuffer [2 * i + 1] = (int16_t)(bo [2 * i + 1] * 16384);
 	   }
 	   if (running. load ())
 	      theGenerator. sendData (outBuffer, readCount * 2);
+	   sampleCounter += src_data -> output_frames_gen;
+	   if (sampleCounter > outputRate / 4) {
+              sampleCounter             -= outputRate / 4;
+              uint64_t currentTime      = getMyTime ();
+              if (nextStop > currentTime)
+                 usleep (nextStop - currentTime);
+              nextStop += 1000000 / 4;
+           }
 	}
 	theGenerator. stop ();
 }
